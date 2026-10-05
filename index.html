@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Maria e os Balões 🎈 - Pixel Art Game</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background: #111;
+      color: #fff;
+      font-family: 'Courier New', Courier, monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    #game-wrapper {
+      position: relative;
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    canvas {
+      background: #70c5ce;
+      border: 4px solid #fff;
+      border-radius: 8px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      width: 100%;
+      height: auto;
+      max-height: 70vh;
+    }
+
+    .controls-panel {
+      margin-top: 12px;
+      display: flex;
+      gap: 15px;
+      width: 100%;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: bold;
+      font-family: 'Courier New', Courier, monospace;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 0 rgba(0,0,0,0.3);
+      transition: transform 0.1s, background 0.2s;
+    }
+
+    .btn:active {
+      transform: translateY(4px);
+      box-shadow: none;
+    }
+
+    .btn-add {
+      background: #2ecc71;
+    }
+    .btn-add:hover { background: #27ae60; }
+
+    .btn-remove {
+      background: #e74c3c;
+    }
+    .btn-remove:hover { background: #c0392b; }
+
+    .fullscreen-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0,0,0,0.6);
+      color: #fff;
+      border: 1px solid #fff;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      z-index: 10;
+    }
+
+    .instructions {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #aaa;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="game-wrapper">
+    <button class="fullscreen-btn" onclick="toggleFullScreen()">⛶ Tela Cheia</button>
+    <canvas id="gameCanvas" width="320" height="480"></canvas>
+    
+    <div class="controls-panel">
+      <button class="btn btn-add" onclick="addBalloon()">🎈 + BALÃO</button>
+      <button class="btn btn-remove" onclick="removeBalloon()">❌ - BALÃO</button>
+    </div>
+
+    <div class="instructions">
+      Usem os botões acima ou as setas <b>CIMA (adicionar)</b> / <b>BAIXO (tirar)</b> no teclado.
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    // Desativa suavização para efeito Pixel Art autêntico
+    ctx.imageSmoothingEnabled = false;
+
+    // Estado do Jogo
+    let gameState = 'START'; // 'START', 'PLAYING', 'GAMEOVER'
+    let score = 0;
+    let frameCount = 0;
+
+    // Maria (Aluna)
+    const maria = {
+      x: 144,
+      y: 280,
+      width: 32,
+      height: 40,
+      vy: 0,
+      balloons: 1,
+      maxBalloons: 5
+    };
+
+    // Ave / Pássaro no Céu
+    const bird = {
+      x: -40,
+      y: 60,
+      width: 28,
+      height: 18,
+      speed: 2.5,
+      active: true,
+      wingFrame: 0
+    };
+
+    // Cores dos Balões
+    const balloonColors = ['#ff5252', '#ff4081', '#e040fb', '#7c4dff', '#536def', '#40c4ff'];
+
+    // Entrada de Teclado
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp' || e.key === ' ') {
+        addBalloon();
+      } else if (e.key === 'ArrowDown') {
+        removeBalloon();
+      } else if ((gameState === 'START' || gameState === 'GAMEOVER') && e.key === 'Enter') {
+        startGame();
+      }
+    });
+
+    function addBalloon() {
+      if (gameState === 'PLAYING' && maria.balloons < maria.maxBalloons) {
+        maria.balloons++;
+      } else if (gameState !== 'PLAYING') {
+        startGame();
+      }
+    }
+
+    function removeBalloon() {
+      if (gameState === 'PLAYING' && maria.balloons > 0) {
+        maria.balloons--;
+      }
+    }
+
+    function startGame() {
+      maria.y = 260;
+      maria.vy = 0;
+      maria.balloons = 2;
+      score = 0;
+      bird.x = -50;
+      bird.y = Math.random() * 80 + 40;
+      gameState = 'PLAYING';
+    }
+
+    // --- LOOP PRINCIPAL ---
+    function gameLoop() {
+      update();
+      render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    // --- ATUALIZAÇÕES DE FÍSICA E LÓGICA ---
+    function update() {
+      frameCount++;
+
+      if (gameState === 'PLAYING') {
+        score += 0.1;
+
+        // Física: Gravidade vs Empuxo dos Balões
+        // 1 Balão equilibra, + de 1 sobe, 0 cai rápido
+        const lift = (maria.balloons - 1.5) * 0.18;
+        const gravity = 0.12;
+
+        maria.vy -= lift;
+        maria.vy += gravity;
+        
+        // Limite de velocidade de queda/subida
+        maria.vy = Math.max(-3.5, Math.min(maria.vy, 4));
+        maria.y += maria.vy;
+
+        // Movimento da Ave
+        bird.x += bird.speed;
+        if (bird.x > canvas.width + 40) {
+          bird.x = -40;
+          bird.y = Math.random() * 90 + 30; // Altura aleatória no céu
+        }
+
+        // Colisão com a Ave (A ave estoura os balões se Maria estiver muito alto)
+        if (checkCollision(maria, bird) && maria.balloons > 0) {
+          maria.balloons = 0; // Ave estoura todos os balões!
+        }
+
+        // Condição de Derrota: Cair na água (y + altura >= 420)
+        if (maria.y + maria.height >= 420) {
+          gameState = 'GAMEOVER';
+        }
+
+        // Teto da Tela (Empurra de volta)
+        if (maria.y < 10) {
+          maria.y = 10;
+          maria.vy = 0;
+        }
+      }
+    }
+
+    function checkCollision(a, b) {
+      return a.x < b.x + b.width &&
+             a.x + a.width > b.x &&
+             a.y < b.y + b.height &&
+             a.y + a.height > b.y;
+    }
+
+    // --- RENDERIZAÇÃO PIXEL ART ---
+    function render() {
+      // 1. Fundo (Céu com gradiente em pixel art)
+      ctx.fillStyle = '#70c5ce';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Nuvens no fundo
+      drawCloud(40, 60);
+      drawCloud(200, 100);
+
+      // 2. Ave / Pássaro
+      drawBird(bird.x, bird.y);
+
+      // 3. Maria e seus Balões
+      if (gameState === 'PLAYING' || gameState === 'START') {
+        drawBalloons(maria.x + 16, maria.y - 10, maria.balloons);
+        drawMaria(maria.x, maria.y);
+      }
+
+      // 4. Água embaixo (Animada)
+      drawWater();
+
+      // 5. Interface de Usuário (HUD / Telas)
+      if (gameState === 'PLAYING') {
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 14px "Courier New"';
+        ctx.fillText(`ALTURA: ${Math.floor(score)}m`, 10, 25);
+        ctx.fillText(`BALÕES: ${maria.balloons}/${maria.maxBalloons}`, 10, 45);
+      } else if (gameState === 'START') {
+        drawOverlay("MARIA E OS BALÕES", "Clique em + BALÃO para subir", "Cuidado com a água e a ave!");
+      } else if (gameState === 'GAMEOVER') {
+        drawOverlay("FIM DE JOGO! 💦", `Você sobreviveu: ${Math.floor(score)}m`, "Clique para Jogar Novamente");
+      }
+    }
+
+    // --- DESENHO EM PIXEL ART ---
+
+    // Desenhar Maria (Aluna de Uniforme com Mochila)
+    function drawMaria(x, y) {
+      // Cabelo Castanho
+      ctx.fillStyle = '#5c3a21';
+      ctx.fillRect(x + 8, y, 16, 8);
+      ctx.fillRect(x + 6, y + 4, 20, 12);
+
+      // Rosto
+      ctx.fillStyle = '#ffcc99';
+      ctx.fillRect(x + 10, y + 8, 12, 10);
+
+      // Olhos
+      ctx.fillStyle = '#000';
+      ctx.fillRect(x + 12, y + 11, 2, 2);
+      ctx.fillRect(x + 18, y + 11, 2, 2);
+
+      // Uniforme Escolar (Camisa Branca + Saia Azul)
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x + 8, y + 18, 16, 10); // Camisa
+
+      ctx.fillStyle = '#1a237e';
+      ctx.fillRect(x + 8, y + 28, 16, 6);  // Saia
+
+      // Mochila Vermelha nas costas
+      ctx.fillStyle = '#d32f2f';
+      ctx.fillRect(x + 4, y + 18, 5, 12);
+
+      // Pernas / Meias
+      ctx.fillStyle = '#ffcc99';
+      ctx.fillRect(x + 10, y + 34, 4, 4);
+      ctx.fillRect(x + 18, y + 34, 4, 4);
+
+      // Sapatinhos Pretos
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(x + 9, y + 38, 5, 2);
+      ctx.fillRect(x + 18, y + 38, 5, 2);
+
+      // Mão levantada segurando corda
+      ctx.fillStyle = '#ffcc99';
+      ctx.fillRect(x + 22, y + 14, 4, 4);
+    }
+
+    // Desenhar Balões e Cordas
+    function drawBalloons(handX, handY, count) {
+      for (let i = 0; i < count; i++) {
+        const offsetX = (i - (count - 1) / 2) * 12;
+        const balloonX = handX + offsetX;
+        const balloonY = handY - 45 - (i % 2 === 0 ? 5 : 0);
+
+        // Corda do balão
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(handX, handY);
+        ctx.lineTo(balloonX, balloonY + 14);
+        ctx.stroke();
+
+        // Balão (Oval em Pixel)
+        ctx.fillStyle = balloonColors[i % balloonColors.length];
+        ctx.fillRect(balloonX - 8, balloonY - 12, 16, 20);
+        ctx.fillRect(balloonX - 10, balloonY - 8, 20, 14);
+
+        // Brilho do Balão
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(balloonX - 5, balloonY - 8, 4, 4);
+
+        // Nó do Balão
+        ctx.fillStyle = balloonColors[i % balloonColors.length];
+        ctx.fillRect(balloonX - 2, balloonY + 8, 4, 3);
+      }
+    }
+
+    // Desenhar Ave (Pássaro Malvado)
+    function drawBird(x, y) {
+      // Corpo
+      ctx.fillStyle = '#333';
+      ctx.fillRect(x + 6, y + 4, 16, 10);
+
+      // Bico
+      ctx.fillStyle = '#f39c12';
+      ctx.fillRect(x + 22, y + 6, 6, 4);
+
+      // Olho Bravo
+      ctx.fillStyle = '#e74c3c';
+      ctx.fillRect(x + 16, y + 5, 3, 3);
+
+      // Asas Animadas
+      ctx.fillStyle = '#222';
+      const wingUp = Math.floor(frameCount / 10) % 2 === 0;
+      if (wingUp) {
+        ctx.fillRect(x + 8, y - 4, 8, 8); // Asa pra cima
+      } else {
+        ctx.fillRect(x + 8, y + 10, 8, 8); // Asa pra baixo
+      }
+    }
+
+    // Desenhar Nuvem Pixel
+    function drawCloud(x, y) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+      ctx.fillRect(x, y, 40, 16);
+      ctx.fillRect(x + 6, y - 6, 28, 22);
+    }
+
+    // Desenhar Água Animada
+    function drawWater() {
+      ctx.fillStyle = '#2980b9';
+      ctx.fillRect(0, 420, canvas.width, 60);
+
+      // Ondeamento Pixel Art
+      ctx.fillStyle = '#3498db';
+      const waveOffset = Math.floor(frameCount / 15) % 2 === 0 ? 0 : 4;
+      for (let x = -10; x < canvas.width + 10; x += 16) {
+        ctx.fillRect(x + waveOffset, 416, 10, 4);
+      }
+    }
+
+    // Mensagens de Tela
+    function drawOverlay(title, sub1, sub2) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+      ctx.fillRect(20, 120, canvas.width - 40, 200);
+
+      ctx.fillStyle = '#ffeb3b';
+      ctx.font = 'bold 16px "Courier New"';
+      ctx.textAlign = 'center';
+      ctx.fillText(title, canvas.width / 2, 160);
+
+      ctx.fillStyle = '#fff';
+      ctx.font = '12px "Courier New"';
+      ctx.fillText(sub1, canvas.width / 2, 210);
+      ctx.fillText(sub2, canvas.width / 2, 235);
+      
+      ctx.fillStyle = '#2ecc71';
+      ctx.fillText("CLIQUE EM (+ BALÃO) PARA COMEÇAR", canvas.width / 2, 280);
+      ctx.textAlign = 'left';
+    }
+
+    // Tela Cheia
+    function toggleFullScreen() {
+      if (!document.fullscreenElement) {
+        document.getElementById('game-wrapper').requestFullscreen().catch(err => {
+          alert(`Erro: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    // Iniciar Loop
+    gameLoop();
+  </script>
+</body>
+</html>
